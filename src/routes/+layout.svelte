@@ -1,9 +1,12 @@
 <script lang="ts">
 	import '$lib/global.scss';
-	import '$lib/m3.css';
+	import '$lib/m3.simple.css';
+	import '$lib/m3.brand.css';
+	import { theme } from '$lib/theme.svelte';
 	import iconHome from '@ktibow/iconset-material-symbols/home';
 	import iconPack from '@ktibow/iconset-material-symbols/package-2-outline';
 	import iconCode from '@ktibow/iconset-material-symbols/code';
+	import iconSettings from '@ktibow/iconset-material-symbols/settings';
 	import favicon from '$lib/assets/favicon.svg';
     import { Button, Card, Icon, NavigationRail, NavigationRailItem } from 'm3-svelte';
 	import { page } from '$app/state';
@@ -11,6 +14,10 @@
 
 	let { children } = $props();
 	let mobile = $state(false);
+
+	$effect(() => {
+		document.documentElement.setAttribute('data-theme', theme.current);
+	});
 
 	const navigationItems = [
 		{
@@ -22,6 +29,11 @@
 			href: '/mrpack',
 			label: 'MRPack',
 			icon: iconPack
+		},
+		{
+			href: '/settings',
+			label: 'Settings',
+			icon: iconSettings
 		}
 	];
 
@@ -94,7 +106,7 @@
 		padding: 1rem;
 	}
 
-	.mobile-warning {
+	div[class*=-warning] {
 		background-color: var(--m3c-error);
 		color: var(--m3c-on-error);
 		padding: 1rem;

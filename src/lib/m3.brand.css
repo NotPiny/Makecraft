@@ -11,7 +11,7 @@
 }
 
 @layer tokens {
-  :root {
+  :root[data-theme="brand"] {
     --m3c-surface: light-dark(#e8fff0, #02110a);
     --m3c-surface-container-lowest: light-dark(#fff, #000);
     --m3c-surface-container-low: light-dark(#d8fce7, #03170e);

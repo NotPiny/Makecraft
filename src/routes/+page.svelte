@@ -1,5 +1,7 @@
 <script>
     import { Card } from "m3-svelte";
+
+    import imageMRPack from '$lib/assets/mrpack.png';
 </script>
 
 <svelte:head>
@@ -38,11 +40,37 @@
                         creation and editing.
                     </p>
                 </Card>
+                <div class="features">
+                    <Card variant="elevated">
+                        <h3>View / Single</h3>
+                        <p>
+                            View the contents of a modpack.
+                        </p>
+                    </Card>
+                    <Card variant="elevated">
+                        <h3>Compare</h3>
+                        <p>
+                            Compare the contents of two modpacks.
+                        </p>
+                    </Card>
+                    <Card variant="elevated">
+                        <h3>Merge</h3>
+                        <p>
+                            Merge two modpacks together.
+                        </p>
+                    </Card>
+                    <Card variant="elevated">
+                        <h3>Convert</h3>
+                        <p>
+                            Convert to/from other modpack formats.
+                        </p>
+                    </Card>
+                </div>
             </div>
             <div class="image">
                 <Card variant="outlined">
                     <img
-                        src="https://picsum.photos/1920/1080"
+                        src={imageMRPack}
                         alt="MRPack screenshot"
                         width="100%"
                         height="auto"
@@ -69,9 +97,18 @@
 
     .details {
         flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
     }
 
     .image {
         flex: 1;
+    }
+
+    .features {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     }
 </style>

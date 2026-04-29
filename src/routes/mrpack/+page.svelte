@@ -34,6 +34,13 @@
 
 	let conversionProcessing = $state(false);
 	let M2CConvertOutput: Blob | undefined = $state();
+	let m2cProgress = $state({ current: 0, total: 0, name: '' });
+
+	let cfFileUpload: Files | undefined = $state();
+	let cfManifest: ModpackManifestFile | undefined = $state();
+	let c2mProcessing = $state(false);
+	let C2MConvertOutput: Blob | undefined = $state();
+	let c2mProgress = $state({ current: 0, total: 0, name: '' });
 
 	function filezone(node: HTMLElement, callback: (files: Files) => void) {
 		filedrop(node, { windowDrop: false });
@@ -213,6 +220,7 @@
 		}
 
 		conversionProcessing = true;
+		m2cProgress = { current: 0, total: indexFile.files.length, name: '' };
 
 		try {
 			const modZipReader = zipReaderMap['primary'];
@@ -246,22 +254,101 @@
 				image: 'https://picsum.photos/512/512.jpg' // TODO: Actually include an image
 			};
 
+			// Copy existing overrides from the mrpack
 			const entries = await modZipReader.getEntries();
 			for (const entry of entries) {
 				if (entry.filename === "modrinth.index.json") continue;
 				if (entry.directory) continue;
-
 				const blob = await entry.getData(new BlobWriter());
 				await curseZipWriter.add(entry.filename, new BlobReader(blob));
 			}
 
-			await curseZipWriter.add("manifest.json", new TextReader(JSON.stringify(curseManifest, null, 4)));
+			// Download each mod file, compute CurseForge Murmur2 fingerprint
+			type DownloadedFile = {
+				mrFile: typeof indexFile.files[number];
+				filename: string;
+				fingerprint: number;
+				buffer: ArrayBuffer;
+			};
 
-			for (const file of indexFile.files) {
-				const response = await fetch(file.downloads[0]);
-				const blob = await response.blob();
-				await curseZipWriter.add(`overrides/${file.path}`, new BlobReader(blob));
+			function cfMurmur2(data: Uint8Array): number {
+				const filtered = data.filter(b => b !== 9 && b !== 10 && b !== 13 && b !== 32);
+				const m = 0x5bd1e995;
+				let h = (1 ^ filtered.length) >>> 0;
+				let i = 0;
+				while (i + 4 <= filtered.length) {
+					let k = (filtered[i] | (filtered[i+1] << 8) | (filtered[i+2] << 16) | (filtered[i+3] << 24)) >>> 0;
+					k = Math.imul(k, m) >>> 0;
+					k ^= k >>> 24;
+					k = Math.imul(k, m) >>> 0;
+					h = Math.imul(h, m) >>> 0;
+					h = (h ^ k) >>> 0;
+					i += 4;
+				}
+				const rem = filtered.length - i;
+				if (rem >= 3) h = (h ^ (filtered[i + 2] << 16)) >>> 0;
+				if (rem >= 2) h = (h ^ (filtered[i + 1] << 8)) >>> 0;
+				if (rem >= 1) {
+					h = (h ^ filtered[i]) >>> 0;
+					h = Math.imul(h, m) >>> 0;
+				}
+				h ^= h >>> 13;
+				h = Math.imul(h, m) >>> 0;
+				h ^= h >>> 15;
+				return h >>> 0;
 			}
+
+			const downloadedFiles: DownloadedFile[] = [];
+			for (const mrFile of indexFile.files) {
+				const filename = mrFile.path.split('/').pop() ?? mrFile.path;
+				m2cProgress = { current: m2cProgress.current, total: m2cProgress.total, name: filename };
+				const response = await fetch(mrFile.downloads[0]);
+				const buffer = await response.arrayBuffer();
+				const fingerprint = cfMurmur2(new Uint8Array(buffer));
+				downloadedFiles.push({ mrFile, filename, fingerprint, buffer });
+				m2cProgress = { current: m2cProgress.current + 1, total: m2cProgress.total, name: filename };
+			}
+
+			// Batch fingerprint lookup on CurseForge
+			type CFMatch = { id: number; file: { id: number; modId: number } };
+			let exactMatches: CFMatch[] = [];
+			if (downloadedFiles.length > 0) {
+				const fpRes = await fetch(
+					`/api/proxy?url=${encodeURIComponent('https://api.curse.tools/v1/fingerprints')}`,
+					{
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ fingerprints: downloadedFiles.map(f => f.fingerprint) }),
+					}
+				);
+				const fpJson = await fpRes.json();
+				exactMatches = fpJson?.data?.exactMatches ?? [];
+			}
+
+			const matchedByFingerprint = new Map<number, CFMatch>();
+			for (const match of exactMatches) {
+				matchedByFingerprint.set(match.id, match);
+			}
+
+			for (const df of downloadedFiles) {
+				const match = matchedByFingerprint.get(df.fingerprint);
+				if (match) {
+					curseManifest.files.push({
+						projectID: match.file.modId,
+						fileID: match.file.id,
+						required: true,
+						isLocked: false,
+					});
+				} else {
+					// Not on CurseForge — bundle as override
+					await curseZipWriter.add(
+						`overrides/${df.mrFile.path}`,
+						new BlobReader(new Blob([df.buffer])),
+					);
+				}
+			}
+
+			await curseZipWriter.add("manifest.json", new TextReader(JSON.stringify(curseManifest, null, 4)));
 
 			M2CConvertOutput = await curseZipWriter.close();
 		} catch (error) {
@@ -269,6 +356,181 @@
 			alert("An error occurred while converting the pack. Please try again.");
 		} finally {
 			conversionProcessing = false;
+		}
+	}
+
+	async function handleCFUpload(files: Files) {
+		const file = files.accepted[0];
+		if (!file) return console.error("No file selected");
+
+		const arrayBuffer = await file.arrayBuffer();
+		const zipReader = new ZipReader(new BlobReader(new Blob([arrayBuffer])));
+		zipReaderMap["cf"] = zipReader;
+
+		const entries = await zipReader.getEntries();
+		const manifestEntry = entries.find((e) => e.filename === "manifest.json");
+		if (!manifestEntry || manifestEntry.directory) {
+			alert(
+				'This doesn\'t seem to be a valid CurseForge modpack. Please make sure it contains a "manifest.json" file.',
+			);
+			return;
+		}
+
+		const content = await manifestEntry.getData(new TextWriter());
+		cfManifest = JSON.parse(content);
+		console.log("manifest.json content:", cfManifest);
+	}
+
+	async function convertCurseforgeToModrinth() {
+		if (!cfManifest) {
+			alert("Please upload a CurseForge modpack first.");
+			return;
+		}
+
+		c2mProcessing = true;
+		c2mProgress = { current: 0, total: cfManifest.files.length, name: '' };
+
+		try {
+			const cfReader = zipReaderMap["cf"];
+			const overridesFolder = cfManifest.overrides || "overrides";
+
+			// Determine loader from manifest
+			const loaderEntry =
+				cfManifest.minecraft.modLoaders.find((l) => l.primary) ??
+				cfManifest.minecraft.modLoaders[0];
+			const loaderId = loaderEntry?.id ?? "";
+
+			const dependencies: IndexFile["dependencies"] = {
+				minecraft: cfManifest.minecraft.version,
+			};
+			if (loaderId.startsWith("fabric-"))
+				dependencies["fabric-loader"] = loaderId.replace("fabric-", "");
+			else if (loaderId.startsWith("forge-"))
+				dependencies["forge"] = loaderId.replace("forge-", "");
+			else if (loaderId.startsWith("neoforge-"))
+				dependencies["neoforge"] = loaderId.replace("neoforge-", "");
+			else if (loaderId.startsWith("quilt-"))
+				dependencies["quilt-loader"] = loaderId.replace("quilt-", "");
+
+			type FileData = {
+				url: string;
+				filename: string;
+				sha1: string;
+				sha512: string;
+				size: number;
+				buffer: ArrayBuffer;
+			};
+
+			const toHex = (buf: ArrayBuffer) =>
+				Array.from(new Uint8Array(buf))
+					.map((b) => b.toString(16).padStart(2, "0"))
+					.join("");
+
+			// Fetch, download and hash each mod file
+			const fileDataList: FileData[] = [];
+			for (const cfFile of cfManifest.files) {
+				c2mProgress = { ...c2mProgress, name: `Fetching ${cfFile.fileID}...` };
+				const res = await fetch(
+					`/api/proxy?url=${encodeURIComponent(`https://api.curse.tools/v1/cf/mods/${cfFile.projectID}/files/${cfFile.fileID}`)}`,
+				);
+				const json = await res.json();
+				const info = json.data;
+				const downloadUrl: string | null = info?.downloadUrl ?? null;
+				const filename: string = info?.fileName ?? `${cfFile.fileID}.jar`;
+
+				if (!downloadUrl) {
+					console.warn(
+						`No download URL for file ${cfFile.fileID} (${filename}), skipping`,
+					);
+					continue;
+				}
+
+				c2mProgress = { current: c2mProgress.current, total: c2mProgress.total, name: filename };
+				const fileRes = await fetch(`/api/proxy?url=${encodeURIComponent(downloadUrl)}`);
+				const buffer = await fileRes.arrayBuffer();
+				const sha1 = toHex(await crypto.subtle.digest("SHA-1", buffer));
+				const sha512 = toHex(await crypto.subtle.digest("SHA-512", buffer));
+
+				fileDataList.push({ url: downloadUrl, filename, sha1, sha512, size: buffer.byteLength, buffer });
+				c2mProgress = { current: c2mProgress.current + 1, total: c2mProgress.total, name: filename };
+			}
+
+			// Batch lookup on Modrinth by SHA-1
+			let modrinthVersions: Record<
+				string,
+				{ files: Array<{ url: string; hashes: { sha1: string; sha512: string } }> }
+			> = {};
+			if (fileDataList.length > 0) {
+				const lookupRes = await fetch("https://api.modrinth.com/v2/version_files", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						hashes: fileDataList.map((f) => f.sha1),
+						algorithm: "sha1",
+					}),
+				});
+				modrinthVersions = await lookupRes.json();
+			}
+
+			const mrpackIndex: IndexFile = {
+				formatVersion: 1,
+				game: "minecraft",
+				versionId: cfManifest.version,
+				name: cfManifest.name,
+				files: [],
+				dependencies,
+			};
+
+			const zipWriter = new ZipWriter(new BlobWriter("application/zip"));
+
+			for (const fd of fileDataList) {
+				const modrinthVersion = modrinthVersions[fd.sha1];
+				if (modrinthVersion) {
+					const matchedFile = modrinthVersion.files.find(
+						(f) => f.hashes.sha1 === fd.sha1,
+					);
+					if (matchedFile) {
+						mrpackIndex.files.push({
+							path: `mods/${fd.filename}`,
+							hashes: { sha1: fd.sha1, sha512: fd.sha512 },
+							env: { client: "required", server: "required" },
+							downloads: [matchedFile.url],
+							fileSize: fd.size,
+						});
+						continue;
+					}
+				}
+				// Not on Modrinth — include as override using cached buffer
+				await zipWriter.add(
+					`overrides/mods/${fd.filename}`,
+					new BlobReader(new Blob([fd.buffer])),
+				);
+			}
+
+			// Copy existing overrides from the CF zip
+			const cfEntries = await cfReader.getEntries();
+			for (const entry of cfEntries) {
+				if (entry.filename === "manifest.json") continue;
+				if (entry.directory) continue;
+				let targetPath = entry.filename;
+				if (targetPath.startsWith(overridesFolder + "/")) {
+					targetPath = "overrides/" + targetPath.slice(overridesFolder.length + 1);
+				}
+				const blob = await entry.getData(new BlobWriter());
+				await zipWriter.add(targetPath, new BlobReader(blob));
+			}
+
+			await zipWriter.add(
+				"modrinth.index.json",
+				new TextReader(JSON.stringify(mrpackIndex, null, 4)),
+			);
+
+			C2MConvertOutput = await zipWriter.close();
+		} catch (error) {
+			console.error("Error converting pack:", error);
+			alert("An error occurred while converting the pack. Please try again.");
+		} finally {
+			c2mProcessing = false;
 		}
 	}
 </script>
@@ -288,7 +550,7 @@
 />
 
 <div class="tool">
-	{#if tab === "single" || tab === 'convert'}
+	{#if tab === "single" || (tab === "convert" && isModrinthToCurseforge)}
 		<label
 			class="upload-zone"
 			use:filezone={(files) => {
@@ -306,6 +568,30 @@
 						</h1>
 						<p>
 							Your MRPack file here, just drop the file here or
+							click to select it.
+						</p>
+					</div>
+				</div>
+			</Card>
+		</label>
+	{:else if tab === "convert" && !isModrinthToCurseforge}
+		<label
+			class="upload-zone"
+			use:filezone={(files) => {
+				cfFileUpload = files;
+				handleCFUpload(files);
+			}}
+		>
+			<Card variant="filled">
+				<div class="card-content">
+					<Icon icon={iconPackage} size={96} />
+					<div>
+						<h1>
+							{#if cfFileUpload}{cfFileUpload.accepted[0]
+									.name}{:else}No file selected{/if}
+						</h1>
+						<p>
+							Your CurseForge modpack here, just drop the file here or
 							click to select it.
 						</p>
 					</div>
@@ -549,23 +835,55 @@
 			<h1>Conversion</h1>
 			<h2>Settings</h2>
 			<label style="display: flex; align-items: center; gap: 0.5rem;">
-				<Switch bind:checked={isModrinthToCurseforge} icons="none" disabled={true} />
-				<p>{isModrinthToCurseforge ? 'Modrinth → Curseforge' : 'Curseforge → Modrinth'}</p>
+				<Switch bind:checked={isModrinthToCurseforge} icons="none" />
+				<p>{isModrinthToCurseforge ? 'Modrinth → CurseForge' : 'CurseForge → Modrinth'}</p>
 			</label>
-			<Button
-				onclick={convertModrinthToCurseforge}
-				disabled={!indexFile || conversionProcessing}
-			>
-				Convert!
-			</Button>
-			{#if conversionProcessing}
-				<LoadingIndicator aria-label="Loading" />
-				<p>Converting pack, please wait...</p>
-			{:else if M2CConvertOutput}
-				<p>The converted pack is ready for download.</p>
-				<a href={URL.createObjectURL(M2CConvertOutput)} download={`${indexFile?.name ?? 'converted'}-${indexFile?.versionId ?? '1.0'}.zip`}>
-					<Button>Download Converted Pack</Button>
-				</a>
+			{#if isModrinthToCurseforge}
+				<Button
+					onclick={convertModrinthToCurseforge}
+					disabled={!indexFile || conversionProcessing}
+				>
+					{#if conversionProcessing}
+						<LoadingIndicator aria-label="Loading" />
+					{:else}
+						Convert!
+					{/if}
+				</Button>
+				{#if conversionProcessing}
+					<div class="progress-row">
+						<span>{m2cProgress.current}/{m2cProgress.total}</span>
+						<span>{m2cProgress.name || '...'}</span>
+						<span>{m2cProgress.total > 0 ? Math.round((m2cProgress.current / m2cProgress.total) * 100) : 0}%</span>
+					</div>
+				{:else if M2CConvertOutput}
+					<p>The converted pack is ready for download.</p>
+					<a href={URL.createObjectURL(M2CConvertOutput)} download={`${indexFile?.name ?? 'converted'}-${indexFile?.versionId ?? '1.0'}.zip`}>
+						<Button>Download Converted Pack</Button>
+					</a>
+				{/if}
+			{:else}
+				<Button
+					onclick={convertCurseforgeToModrinth}
+					disabled={!cfManifest || c2mProcessing}
+				>
+					{#if c2mProcessing}
+						<LoadingIndicator aria-label="Loading" />
+					{:else}
+						Convert!
+					{/if}
+				</Button>
+				{#if c2mProcessing}
+					<div class="progress-row">
+						<span>{c2mProgress.current}/{c2mProgress.total}</span>
+						<span>{c2mProgress.name || '...'}</span>
+						<span>{c2mProgress.total > 0 ? Math.round((c2mProgress.current / c2mProgress.total) * 100) : 0}%</span>
+					</div>
+				{:else if C2MConvertOutput}
+					<p>The converted pack is ready for download.</p>
+					<a href={URL.createObjectURL(C2MConvertOutput)} download={`${cfManifest?.name ?? 'converted'}-${cfManifest?.version ?? '1.0'}.mrpack`}>
+						<Button>Download Converted Pack</Button>
+					</a>
+				{/if}
 			{/if}
 		</Card>
 	{/if}
@@ -613,5 +931,11 @@
 		display: flex;
 		gap: 1rem;
 		margin: 1rem 0;
+	}
+
+	.progress-row {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
 	}
 </style>
