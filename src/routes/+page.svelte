@@ -2,6 +2,10 @@
     import { Card } from "m3-svelte";
 </script>
 
+<svelte:head>
+    <title>Makecraft</title>
+</svelte:head>
+
 <div class="content">
     <Card variant="filled">
         <h1>Makecraft</h1>

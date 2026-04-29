@@ -201,6 +201,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>MRPack - Makecraft</title>
+</svelte:head>
+
 <Tabs
 	items={[
 		{ name: "Single", value: "single" },
