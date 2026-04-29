@@ -20,20 +20,29 @@
             developer, I don't want to reinvent the wheel.
         </p>
     </Card>
-    <br/>
+    <br />
     <Card variant="filled">
         <div class="row">
             <div class="details">
                 <Card variant="outlined">
                     <h2>MRPack</h2>
                     <p>
-                        Various tools for managing Modrinth modpacks. Currently supports viewing modpack contents, comparing two modpacks, and merging two modpacks together. More features will be added in the future, such as modpack creation and editing.
+                        Various tools for managing Modrinth modpacks. Currently
+                        supports viewing modpack contents, comparing two
+                        modpacks, and merging two modpacks together. More
+                        features will be added in the future, such as modpack
+                        creation and editing.
                     </p>
                 </Card>
             </div>
             <div class="image">
                 <Card variant="outlined">
-                    <img src="https://picsum.photos/1920/1080" alt="MRPack screenshot" width="100%" height="auto" />
+                    <img
+                        src="https://picsum.photos/1920/1080"
+                        alt="MRPack screenshot"
+                        width="100%"
+                        height="auto"
+                    />
                 </Card>
             </div>
         </div>
