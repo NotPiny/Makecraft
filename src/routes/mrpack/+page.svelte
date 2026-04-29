@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { Button, Card, Icon, LoadingIndicator, Tabs, TextField } from "m3-svelte";
+	import { Button, Card, ConnectedButtons, Icon, LoadingIndicator, Switch, Tabs, TextField } from "m3-svelte";
 	import { filedrop } from "filedrop-svelte";
 	import type { Files } from "filedrop-svelte";
 	import iconPackage from "@ktibow/iconset-material-symbols/package-2";
 	import { BlobReader, BlobWriter, TextReader, TextWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
 	import type { IndexFile, Project, Version } from "$lib/modrinth.type";
 	import ModCard from "./ModCard.svelte";
+    import type { ModpackManifestFile } from "$lib/curseforge.type";
 
 	let tab = $state("single");
 	let compareMode: "side" | "add" | "remove" = $state("side");
@@ -28,6 +29,11 @@
 
 	let mergeProcessing = $state(false);
 	let mergeResult: Blob | undefined = $state();
+
+	let isModrinthToCurseforge = $state(true);
+
+	let conversionProcessing = $state(false);
+	let M2CConvertOutput: Blob | undefined = $state();
 
 	function filezone(node: HTMLElement, callback: (files: Files) => void) {
 		filedrop(node, { windowDrop: false });
@@ -199,6 +205,72 @@
 			mergeProcessing = false;
 		}
 	}
+
+	async function convertModrinthToCurseforge() {
+		if (!indexFile) {
+			alert("Please upload an MRPack file to convert.");
+			return;
+		}
+
+		conversionProcessing = true;
+
+		try {
+			const modZipReader = zipReaderMap['primary'];
+			const curseZipWriter = new ZipWriter(new BlobWriter("application/zip"));
+
+			const curseManifest: ModpackManifestFile = {
+				minecraft: {
+					version: indexFile.dependencies.minecraft,
+					modLoaders: [
+						{
+							id: indexFile.dependencies["fabric-loader"] ? 
+								`fabric-${indexFile.dependencies["fabric-loader"]}` :
+								indexFile.dependencies["forge"] ?
+									`forge-${indexFile.dependencies["forge"]}` :
+									indexFile.dependencies["quilt-loader"] ?
+										`quilt-${indexFile.dependencies["quilt-loader"]}` :
+									indexFile.dependencies["neoforge"] ?
+										`neoforge-${indexFile.dependencies["neoforge"]}` :
+										'magic-loader-something-went-wrong-uh-oh',
+							primary: true
+						}
+					]
+				},
+				manifestType: 'minecraftModpack',
+				manifestVersion: 1,
+				name: indexFile.name,
+				version: indexFile.versionId,
+				author: 'Makecraft pack converter',
+				files: [],
+				overrides: 'overrides',
+				image: 'https://picsum.photos/512/512' // TODO: Actually include an image
+			};
+
+			const entries = await modZipReader.getEntries();
+			for (const entry of entries) {
+				if (entry.filename === "modrinth.index.json") continue;
+				if (entry.directory) continue;
+
+				const blob = await entry.getData(new BlobWriter());
+				await curseZipWriter.add(entry.filename, new BlobReader(blob));
+			}
+
+			await curseZipWriter.add("manifest.json", new TextReader(JSON.stringify(curseManifest, null, 4)));
+
+			for (const file of indexFile.files) {
+				const response = await fetch(file.downloads[0]);
+				const blob = await response.blob();
+				await curseZipWriter.add(`overrides/${file.path}`, new BlobReader(blob));
+			}
+
+			M2CConvertOutput = await curseZipWriter.close();
+		} catch (error) {
+			console.error("Error converting pack:", error);
+			alert("An error occurred while converting the pack. Please try again.");
+		} finally {
+			conversionProcessing = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -210,12 +282,13 @@
 		{ name: "Single", value: "single" },
 		{ name: "Compare", value: "compare" },
 		{ name: "Merge", value: "merge" },
+		{ name: "Convert", value: "convert" }
 	]}
 	bind:tab
 />
 
 <div class="tool">
-	{#if tab === "single"}
+	{#if tab === "single" || tab === 'convert'}
 		<label
 			class="upload-zone"
 			use:filezone={(files) => {
@@ -465,6 +538,33 @@
 				<p>The merged pack is ready for download.</p>
 				<a href={URL.createObjectURL(mergeResult)} download={`${mergePackName}-${mergePackVersion}.mrpack`}>
 					<Button>Download Merged Pack</Button>
+				</a>
+			{/if}
+		</Card>
+	{/if}
+
+	{#if tab === "convert"}
+		<br/>
+		<Card variant="outlined">
+			<h1>Conversion</h1>
+			<h2>Settings</h2>
+			<label style="display: flex; align-items: center; gap: 0.5rem;">
+				<Switch bind:checked={isModrinthToCurseforge} icons="none" disabled={true} />
+				<p>{isModrinthToCurseforge ? 'Modrinth → Curseforge' : 'Curseforge → Modrinth'}</p>
+			</label>
+			<Button
+				onclick={convertModrinthToCurseforge}
+				disabled={!indexFile || conversionProcessing}
+			>
+				Convert!
+			</Button>
+			{#if conversionProcessing}
+				<LoadingIndicator aria-label="Loading" />
+				<p>Converting pack, please wait...</p>
+			{:else if M2CConvertOutput}
+				<p>The converted pack is ready for download.</p>
+				<a href={URL.createObjectURL(M2CConvertOutput)} download={`${indexFile?.name ?? 'converted'}-${indexFile?.versionId ?? '1.0'}.zip`}>
+					<Button>Download Converted Pack</Button>
 				</a>
 			{/if}
 		</Card>

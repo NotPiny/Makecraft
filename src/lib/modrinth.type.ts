@@ -18,7 +18,10 @@ export interface IndexFile {
 		fileSize: number
 	}>
 	dependencies: {
-		"fabric-loader": string
+		"forge"?: string
+		"neoforge"?: string
+		"fabric-loader"?: string
+		"quilt-loader"?: string
 		minecraft: string
 	}
 }
