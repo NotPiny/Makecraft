@@ -241,9 +241,9 @@
 				name: indexFile.name,
 				version: indexFile.versionId,
 				author: 'Makecraft pack converter',
-				files: [],
 				overrides: 'overrides',
-				image: 'https://picsum.photos/512/512' // TODO: Actually include an image
+				files: [],
+				image: 'https://picsum.photos/512/512.jpg' // TODO: Actually include an image
 			};
 
 			const entries = await modZipReader.getEntries();
