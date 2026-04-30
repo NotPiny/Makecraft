@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 
-export const themeList = ['brand', 'simple'] as const;
+export const themeList = ['brand', 'simple', 'space'] as const;
 export type Theme = (typeof themeList)[number];
 
 export const theme = $state<{ current: Theme }>({

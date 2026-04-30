@@ -2,6 +2,7 @@
 	import '$lib/global.scss';
 	import '$lib/m3.simple.css';
 	import '$lib/m3.brand.css';
+	import '$lib/m3.space.css';
 	import { theme } from '$lib/theme.svelte';
 	import iconHome from '@ktibow/iconset-material-symbols/home';
 	import iconPack from '@ktibow/iconset-material-symbols/package-2-outline';
