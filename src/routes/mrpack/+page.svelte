@@ -8,6 +8,13 @@
 	import ModCard from "./ModCard.svelte";
     import type { ModpackManifestFile } from "$lib/curseforge.type";
 
+	type OverrideFile = {
+		path: string;
+		type: 'text' | 'image' | 'unknown';
+		content?: string;
+		blobUrl?: string;
+	};
+
 	let tab = $state("single");
 	let compareMode: "side" | "add" | "remove" = $state("side");
 
@@ -23,6 +30,9 @@
 	let fetchedVersions: Record<string, Version> = $state({});
 
 	let zipReaderMap: Record<string, ZipReader<unknown>> = $state({});
+	let primaryZipEntries: string[] = $state([]);
+	let primaryOverrides: OverrideFile[] = $state([]);
+	let secondaryOverrides: OverrideFile[] = $state([]);
 
 	let mergePackName = $state("");
 	let mergePackVersion = $state("");
@@ -41,6 +51,46 @@
 	let c2mProcessing = $state(false);
 	let C2MConvertOutput: Blob | undefined = $state();
 	let c2mProgress = $state({ current: 0, total: 0, name: '' });
+
+	function detectOverrideType(filename: string): 'text' | 'image' | 'unknown' {
+		const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+		const TEXT_EXTS = new Set(['txt', 'json', 'toml', 'yaml', 'yml', 'cfg', 'properties', 'md', 'xml', 'conf', 'ini', 'snbt', 'mcmeta', 'mcfunction', 'zs', 'js', 'ts']);
+		const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+		if (TEXT_EXTS.has(ext)) return 'text';
+		if (IMAGE_EXTS.has(ext)) return 'image';
+		return 'unknown';
+	}
+
+	async function buildOverrideFiles(
+		entries: Awaited<ReturnType<ZipReader<unknown>['getEntries']>>,
+	): Promise<OverrideFile[]> {
+		const filtered = entries.filter((e) => !e.directory && e.filename !== 'modrinth.index.json');
+		return Promise.all(
+			filtered.map(async (entry) => {
+				const type = detectOverrideType(entry.filename);
+				if (entry.directory) return { path: entry.filename, type: 'unknown' as const };
+				if (type === 'text') {
+					const content = await entry.getData(new TextWriter());
+					return { path: entry.filename, type, content };
+				} else if (type === 'image') {
+					const blob = await entry.getData(new BlobWriter());
+					return { path: entry.filename, type, blobUrl: URL.createObjectURL(blob) };
+				} else {
+					// Try MIME type detection via blob
+					const blob = await entry.getData(new BlobWriter());
+					if (blob.type && blob.type !== '' && blob.type !== 'application/octet-stream') {
+						if (blob.type.startsWith('image/')) {
+							return { path: entry.filename, type: 'image' as const, blobUrl: URL.createObjectURL(blob) };
+						}
+						if (blob.type.startsWith('text/')) {
+							return { path: entry.filename, type: 'text' as const, content: await blob.text() };
+						}
+					}
+					return { path: entry.filename, type: 'unknown' as const };
+				}
+			}),
+		);
+	}
 
 	function filezone(node: HTMLElement, callback: (files: Files) => void) {
 		filedrop(node, { windowDrop: false });
@@ -133,6 +183,7 @@
 				indexFileSecondary,
 			);
 			handleIndexFile(indexFileSecondary!);
+			secondaryOverrides = await buildOverrideFiles(entries);
 		} else if (target === "ignore") {
 			indexFileIgnore = JSON.parse(indexContent);
 			console.log(
@@ -144,6 +195,7 @@
 			indexFile = JSON.parse(indexContent);
 			console.log("modrinth.index.json content:", indexFile);
 			handleIndexFile(indexFile!);
+			primaryOverrides = await buildOverrideFiles(entries);
 		}
 	}
 
@@ -539,6 +591,19 @@
 	<title>MRPack - Makecraft</title>
 </svelte:head>
 
+{#snippet overrideCard(override: OverrideFile)}
+	<Card variant="outlined">
+		<div class="override-card">
+			<h4>{override.path}</h4>
+			{#if override.type === 'text' && override.content !== undefined}
+				<pre class="override-text">{override.content}</pre>
+			{:else if override.type === 'image' && override.blobUrl}
+				<img src={override.blobUrl} alt={override.path} class="override-image" />
+			{/if}
+		</div>
+	</Card>
+{/snippet}
+
 <Tabs
 	items={[
 		{ name: "Single", value: "single" },
@@ -689,7 +754,16 @@
 						<p>Loading project data...</p>
 					{/if}
 				{/each}
+
 			</div>
+			{#if primaryOverrides.length > 0}
+				<h2 class="section-header">Overrides</h2>
+				<div class="override-list">
+					{#each primaryOverrides as override}
+						{@render overrideCard(override)}
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	{/if}
 
@@ -726,6 +800,14 @@
 								{/if}
 							{/each}
 						</div>
+						{#if primaryOverrides.length > 0}
+							<h2 class="section-header">Overrides</h2>
+							<div class="override-list">
+								{#each primaryOverrides as override}
+									{@render overrideCard(override)}
+								{/each}
+							</div>
+						{/if}
 					</div>
 					<div class="side-by-side_right">
 						<div class="mod-list">
@@ -746,6 +828,14 @@
 								{/if}
 							{/each}
 						</div>
+						{#if secondaryOverrides.length > 0}
+							<h2 class="section-header">Overrides</h2>
+							<div class="override-list">
+								{#each secondaryOverrides as override}
+									{@render overrideCard(override)}
+								{/each}
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/if}
@@ -769,6 +859,15 @@
 						{/if}
 					{/each}
 				</div>
+				{@const addedOverrides = secondaryOverrides.filter((o) => !primaryOverrides.some((p) => p.path === o.path))}
+				{#if addedOverrides.length > 0}
+					<h2 class="section-header">Added Overrides</h2>
+					<div class="override-list">
+						{#each addedOverrides as override}
+							{@render overrideCard(override)}
+						{/each}
+					</div>
+				{/if}
 			{/if}
 
 			{#if compareMode === "remove"}
@@ -790,6 +889,15 @@
 						{/if}
 					{/each}
 				</div>
+				{@const removedOverrides = primaryOverrides.filter((o) => !secondaryOverrides.some((s) => s.path === o.path))}
+				{#if removedOverrides.length > 0}
+					<h2 class="section-header">Removed Overrides</h2>
+					<div class="override-list">
+						{#each removedOverrides as override}
+							{@render overrideCard(override)}
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		{:else}
 			<p>Please upload both MRPack files to compare.</p>
@@ -937,5 +1045,53 @@
 		display: flex;
 		justify-content: space-between;
 		gap: 0.5rem;
+	}
+
+	.section-header {
+		margin-top: 1.5rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.side-by-side .section-header {
+		padding: 0 1rem;
+	}
+
+	.override-list {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 1rem;
+		margin-top: 0.5rem;
+	}
+
+	.side-by-side .override-list {
+		padding: 0 1rem 1rem;
+	}
+
+	.override-card {
+		padding: 0.75rem 1rem;
+	}
+
+	.override-card h4 {
+		margin: 0 0 0.5rem;
+		word-break: break-all;
+		font-family: monospace;
+		font-size: 0.875rem;
+	}
+
+	.override-text {
+		margin: 0;
+		max-height: 200px;
+		overflow: auto;
+		font-size: 0.75rem;
+		white-space: pre-wrap;
+		word-break: break-all;
+		background-color: var(--m3c-surface-container-highest);
+		border-radius: 4px;
+		padding: 0.5rem;
+	}
+
+	.override-image {
+		max-width: 100%;
+		border-radius: 4px;
 	}
 </style>
