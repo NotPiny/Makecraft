@@ -7,6 +7,7 @@
     "npm:@sveltejs/kit@^2.57.0": "2.57.1_@sveltejs+vite-plugin-svelte@7.0.0__svelte@5.55.4__vite@8.0.10___sass-embedded@1.99.0__sass-embedded@1.99.0_svelte@5.55.4_typescript@6.0.3_vite@8.0.10__sass-embedded@1.99.0_sass-embedded@1.99.0",
     "npm:@sveltejs/vite-plugin-svelte@7": "7.0.0_svelte@5.55.4_vite@8.0.10__sass-embedded@1.99.0_sass-embedded@1.99.0",
     "npm:@zip.js/zip.js@^2.8.26": "2.8.26",
+    "npm:fflate@~0.8.2": "0.8.2",
     "npm:filedrop-svelte@~0.1.2": "0.1.2",
     "npm:m3-svelte@^7.1.2": "7.1.2_svelte@5.55.4_vite-plugin-functions-mixins@0.4.1__vite@8.0.10___sass-embedded@1.99.0_vite@8.0.10__sass-embedded@1.99.0",
     "npm:sass-embedded@^1.99.0": "1.99.0",
@@ -384,6 +385,9 @@
       "optionalPeers": [
         "picomatch"
       ]
+    },
+    "fflate@0.8.2": {
+      "integrity": "sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A=="
     },
     "file-selector@0.2.4": {
       "integrity": "sha512-ZDsQNbrv6qRi1YTDOEWzf5J2KjZ9KMI1Q2SGeTkCJmNNW25Jg4TW4UMcmoqcg4WrAyKRcpBXdbWRxkfrOzVRbA==",
@@ -863,6 +867,7 @@
         "npm:@sveltejs/kit@^2.57.0",
         "npm:@sveltejs/vite-plugin-svelte@7",
         "npm:@zip.js/zip.js@^2.8.26",
+        "npm:fflate@~0.8.2",
         "npm:filedrop-svelte@~0.1.2",
         "npm:m3-svelte@^7.1.2",
         "npm:sass-embedded@^1.99.0",

@@ -7,6 +7,7 @@
 	import iconHome from '@ktibow/iconset-material-symbols/home';
 	import iconPack from '@ktibow/iconset-material-symbols/package-2-outline';
 	import iconCode from '@ktibow/iconset-material-symbols/code';
+	import iconImage from '@ktibow/iconset-material-symbols/image';
 	import iconSettings from '@ktibow/iconset-material-symbols/settings';
 	import favicon from '$lib/assets/favicon.svg';
     import { Button, Card, Icon, NavigationRail, NavigationRailItem } from 'm3-svelte';
@@ -30,6 +31,11 @@
 			href: '/mrpack',
 			label: 'MRPack',
 			icon: iconPack
+		},
+		{
+			href: '/resourcepack/fixer',
+			label: 'Pack Fixer',
+			icon: iconImage
 		},
 		{
 			href: '/settings',

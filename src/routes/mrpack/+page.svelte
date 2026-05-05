@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { Button, Card, ConnectedButtons, Icon, LoadingIndicator, Switch, Tabs, TextField } from "m3-svelte";
-	import { filedrop } from "filedrop-svelte";
+	import { Button, Card, ConnectedButtons, LoadingIndicator, Switch, Tabs, TextField } from "m3-svelte";
 	import type { Files } from "filedrop-svelte";
-	import iconPackage from "@ktibow/iconset-material-symbols/package-2";
+	import FileDropZone from "./FileDropZone.svelte";
 	import { BlobReader, BlobWriter, TextReader, TextWriter, ZipReader, ZipWriter } from "@zip.js/zip.js";
 	import type { IndexFile, Project, Version } from "$lib/modrinth.type";
 	import ModCard from "./ModCard.svelte";
@@ -92,18 +91,7 @@
 		);
 	}
 
-	function filezone(node: HTMLElement, callback: (files: Files) => void) {
-		filedrop(node, { windowDrop: false });
-		const handler = (e: Event) => {
-			callback((e as CustomEvent<{ files: Files }>).detail.files);
-		};
-		node.addEventListener("filedrop", handler);
-		return {
-			destroy() {
-				node.removeEventListener("filedrop", handler);
-			},
-		};
-	}
+
 
 	function handleIndexFile(currentIndexFile: IndexFile) {
 		currentIndexFile?.files.forEach((file) => {
@@ -616,122 +604,39 @@
 
 <div class="tool">
 	{#if tab === "single" || (tab === "convert" && isModrinthToCurseforge)}
-		<label
-			class="upload-zone"
-			use:filezone={(files) => {
-				fileUpload = files;
-				handleUpload(files);
-			}}
-		>
-			<Card variant="filled">
-				<div class="card-content">
-					<Icon icon={iconPackage} size={96} />
-					<div>
-						<h1>
-							{#if fileUpload}{fileUpload.accepted[0]
-									.name}{:else}No file selected{/if}
-						</h1>
-						<p>
-							Your MRPack file here, just drop the file here or
-							click to select it.
-						</p>
-					</div>
-				</div>
-			</Card>
-		</label>
+		<FileDropZone
+			bind:files={fileUpload}
+			description="Your MRPack file here, just drop the file here or click to select it."
+			onchange={(files) => handleUpload(files)}
+		/>
 	{:else if tab === "convert" && !isModrinthToCurseforge}
-		<label
-			class="upload-zone"
-			use:filezone={(files) => {
-				cfFileUpload = files;
-				handleCFUpload(files);
-			}}
-		>
-			<Card variant="filled">
-				<div class="card-content">
-					<Icon icon={iconPackage} size={96} />
-					<div>
-						<h1>
-							{#if cfFileUpload}{cfFileUpload.accepted[0]
-									.name}{:else}No file selected{/if}
-						</h1>
-						<p>
-							Your CurseForge modpack here, just drop the file here or
-							click to select it.
-						</p>
-					</div>
-				</div>
-			</Card>
-		</label>
+		<FileDropZone
+			bind:files={cfFileUpload}
+			description="Your CurseForge modpack here, just drop the file here or click to select it."
+			onchange={(files) => handleCFUpload(files)}
+		/>
 	{:else}
 		<Card variant="filled">
 			<div class="card-content">
-				<label
-					class="upload-zone"
-					use:filezone={(files) => {
-						fileUpload = files;
-						handleUpload(files);
-					}}
-				>
-					<Card variant="elevated">
-						<Icon icon={iconPackage} size={96} />
-						<div>
-							<h1>
-								{#if fileUpload}{fileUpload.accepted[0]
-										.name}{:else}No file selected{/if}
-							</h1>
-							<p>
-								Your first MRPack file here, just drop the file
-								here or click to select it.
-							</p>
-						</div>
-					</Card>
-				</label>
-				<label
-					class="upload-zone"
-					use:filezone={(files) => {
-						fileUploadSecondary = files;
-						handleUpload(files, "secondary");
-					}}
-				>
-					<Card variant="elevated">
-						<Icon icon={iconPackage} size={96} />
-						<div>
-							<h1>
-								{#if fileUploadSecondary}{fileUploadSecondary
-										.accepted[0].name}{:else}No file
-									selected{/if}
-							</h1>
-							<p>
-								Your second MRPack file here, just drop the file
-								here or click to select it.
-							</p>
-						</div>
-					</Card>
-				</label>
+				<FileDropZone
+					bind:files={fileUpload}
+					description="Your first MRPack file here, just drop the file here or click to select it."
+					variant="elevated"
+					onchange={(files) => handleUpload(files)}
+				/>
+				<FileDropZone
+					bind:files={fileUploadSecondary}
+					description="Your second MRPack file here, just drop the file here or click to select it."
+					variant="elevated"
+					onchange={(files) => handleUpload(files, 'secondary')}
+				/>
 				{#if tab === "compare"}
-					<label
-						class="upload-zone"
-						use:filezone={(files) => {
-							fileUploadIgnore = files;
-							handleUpload(files, "ignore");
-						}}
-					>
-						<Card variant="elevated">
-							<Icon icon={iconPackage} size={96} />
-							<div>
-								<h1>
-									{#if fileUploadIgnore}{fileUploadIgnore
-											.accepted[0].name}{:else}No file
-										selected{/if}
-								</h1>
-								<p>
-									Ignore pack (optional) — mods in this pack
-									will be excluded from the output.
-								</p>
-							</div>
-						</Card>
-					</label>
+					<FileDropZone
+						bind:files={fileUploadIgnore}
+						description="Ignore pack (optional) — mods in this pack will be excluded from the output."
+						variant="elevated"
+						onchange={(files) => handleUpload(files, 'ignore')}
+					/>
 				{/if}
 			</div>
 		</Card>
@@ -1006,10 +911,6 @@
 		display: flex;
 		gap: 1rem;
 		padding: 1rem;
-	}
-
-	.upload-zone {
-		cursor: pointer;
 	}
 
 	.mod-list {

@@ -13,7 +13,8 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
 	"dependencies": {
-		"@zip.js/zip.js": "^2.8.26"
+		"@zip.js/zip.js": "^2.8.26",
+		"fflate": "^0.8.2"
 	},
 	"devDependencies": {
 		"@fontsource-variable/google-sans-flex": "^5.2.3",
